@@ -1,28 +1,32 @@
-# TradeUp Site
+# TradeUp Site (React)
 
-This project is configured to deploy on Railway as a Node.js web service.
+This project uses React + Vite for the frontend and a small Node server for Railway hosting.
 
-## Run locally
+## Local development
 
-1. Install dependencies (none required beyond Node, but this creates lockfile if needed):
+1. Install dependencies:
 	- `npm install`
-2. Start the server:
-	- `npm start`
-3. Open:
-	- `http://localhost:3000`
+2. Run dev mode:
+	- `npm run dev`
 
-The server automatically uses Railway's `PORT` environment variable in production.
+## Local production preview
+
+1. Build and serve (same entry as Railway):
+	- `npm start`
+2. Open:
+	- `http://localhost:3000`
 
 ## Deploy to Railway
 
 1. Push this project to GitHub.
-2. In Railway, click **New Project** → **Deploy from GitHub repo**.
-3. Select this repository.
-4. Railway will detect Node.js and run `npm start` (configured in `railway.json`).
-5. After deploy finishes, open the generated Railway domain.
+2. In Railway, create a new project from this repo.
+3. Ensure branch is `main` and root directory is `/`.
+4. Deploy; Railway runs `npm start` (configured in `railway.json`).
 
-## Included deployment files
+## Important files
 
-- `package.json` with `start` script
-- `server.js` static file server
-- `railway.json` with Railway start command
+- `src/App.jsx` main landing page
+- `src/styles.css` blue/white/black styling
+- `server.js` serves built `dist` files
+- `railway.json` Railway start command
+- `nixpacks.toml` explicit Node runtime/start setup

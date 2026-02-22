@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 const port = process.env.PORT || 3000;
-const root = __dirname;
+const root = path.join(__dirname, 'dist');
 
 const mimeTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -49,7 +49,7 @@ function sendFile(filePath, res) {
 
 const server = http.createServer((req, res) => {
   const requestPath = decodeURIComponent((req.url || '/').split('?')[0]);
-  const safePath = path.normalize(requestPath).replace(/^([.][.][/\\])+/, '');
+  const safePath = path.normalize(requestPath).replace(/^([.][.][\\/])+/, '');
 
   let filePath = path.join(root, safePath);
 
@@ -68,5 +68,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(port, () => {
-  console.log(`TradeUp site running on port ${port}`);
+  console.log(`TradeUp React site running on port ${port}`);
 });
