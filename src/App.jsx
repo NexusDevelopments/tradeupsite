@@ -3,9 +3,30 @@ import { useEffect, useState } from 'react';
 const fallbackInviteLink = 'https://discord.gg/rM43kyut';
 const fallbackServerId = '1470184067776647284';
 const fallbackStaffMembers = [
-  { userId: '1057806013639704676', role: 'Owner' },
-  { userId: '1123305643458183228', role: 'Owner' },
-  { userId: '1435310225010987088', role: 'Developer' }
+  {
+    userId: '1057806013639704676',
+    role: 'Owner',
+    username: 'user_4676',
+    displayName: 'Owner',
+    avatarUrl: null,
+    status: 'offline'
+  },
+  {
+    userId: '1123305643458183228',
+    role: 'Owner',
+    username: 'user_3228',
+    displayName: 'Owner',
+    avatarUrl: null,
+    status: 'offline'
+  },
+  {
+    userId: '1435310225010987088',
+    role: 'Developer',
+    username: 'user_7088',
+    displayName: 'Developer',
+    avatarUrl: null,
+    status: 'offline'
+  }
 ];
 
 const tabs = [
@@ -112,14 +133,19 @@ function App() {
       return (
         <section className="panel route-panel">
           <h2>Our Team</h2>
-          <p>Official TradeUp staff members and roles.</p>
+          <p>Official TradeUp staff members, display names, usernames, and IDs.</p>
           <div className="staff-list">
             {serverData.staffMembers.map((member) => (
               <div className="founder" key={member.userId}>
-                <div className="avatar">{member.role[0]}</div>
+                {member.avatarUrl ? (
+                  <img className="avatar avatar-img" src={member.avatarUrl} alt={`${member.displayName} avatar`} loading="lazy" />
+                ) : (
+                  <div className="avatar">{member.displayName[0]}</div>
+                )}
                 <div>
-                  <strong>{member.role}</strong>
-                  <p>ID: {member.userId}</p>
+                  <strong>{member.displayName}</strong>
+                  <p>@{member.username}</p>
+                  <p>{member.role} · ID: {member.userId}</p>
                 </div>
               </div>
             ))}
@@ -155,17 +181,17 @@ function App() {
 
         <section className="cards">
           <article className="card">
-            <div className="icon">◆</div>
+            <div className="icon" />
             <h3>Fast Middleman Queue</h3>
             <p>Open a ticket and get matched with an available Roblox middleman quickly.</p>
           </article>
           <article className="card">
-            <div className="icon">✓</div>
+            <div className="icon" />
             <h3>Scam Prevention First</h3>
             <p>Verified staff, vouch records, and strict proof checks for every trade.</p>
           </article>
           <article className="card">
-            <div className="icon">⚡</div>
+            <div className="icon" />
             <h3>Built for Roblox Traders</h3>
             <p>Focused support for limited trading, cross-trades, and account deals.</p>
           </article>

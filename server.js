@@ -14,6 +14,24 @@ const staffMembers = [
   { userId: '1435310225010987088', role: 'Developer' }
 ];
 
+async function getWidgetMembers(guildId) {
+  if (!guildId) {
+    return [];
+  }
+
+  const response = await fetch(`https://discord.com/api/guilds/${guildId}/widget.json`);
+  if (!response.ok) {
+    return [];
+  }
+
+  const widgetData = await response.json();
+  if (!widgetData || !Array.isArray(widgetData.members)) {
+    return [];
+  }
+
+  return widgetData.members;
+}
+
 const mimeTypes = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
@@ -65,6 +83,23 @@ async function getDiscordServerData() {
 
   const inviteData = await response.json();
   const guild = inviteData.guild || {};
+  const widgetMembers = await getWidgetMembers(guild.id || serverId);
+
+  const enrichedStaffMembers = staffMembers.map((staffMember) => {
+    const memberData = widgetMembers.find((member) => member.id === staffMember.userId);
+    const username = memberData?.username || `user_${staffMember.userId.slice(-4)}`;
+    const displayName = memberData?.global_name || memberData?.nick || username;
+
+    return {
+      userId: staffMember.userId,
+      role: staffMember.role,
+      username,
+      displayName,
+      avatarUrl: memberData?.avatar_url || null,
+      status: memberData?.status || 'offline'
+    };
+  });
+
   const iconUrl = guild.id && guild.icon
     ? `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png?size=256`
     : null;
@@ -76,7 +111,7 @@ async function getDiscordServerData() {
     iconUrl,
     memberCount: inviteData.approximate_member_count ?? null,
     onlineCount: inviteData.approximate_presence_count ?? null,
-    staffMembers
+    staffMembers: enrichedStaffMembers
   };
 }
 
@@ -98,7 +133,13 @@ const server = http.createServer((req, res) => {
           iconUrl: null,
           memberCount: null,
           onlineCount: null,
-          staffMembers
+          staffMembers: staffMembers.map((staffMember) => ({
+            ...staffMember,
+            username: `user_${staffMember.userId.slice(-4)}`,
+            displayName: staffMember.role,
+            avatarUrl: null,
+            status: 'offline'
+          }))
         }));
       });
     return;
