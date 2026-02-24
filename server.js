@@ -14,6 +14,7 @@ const discordBotToken = rawDiscordToken.replace(/^Bot\s+/i, '');
 const discordClientId = (process.env.DISCORD_CLIENT_ID || '').trim();
 const discordClientSecret = (process.env.DISCORD_CLIENT_SECRET || '').trim();
 const configuredRedirectUri = (process.env.DISCORD_REDIRECT_URI || '').trim();
+const publicBaseUrl = (process.env.PUBLIC_BASE_URL || process.env.APP_BASE_URL || '').trim();
 let discordClient = null;
 let discordClientReady = false;
 let discordClientTag = null;
@@ -29,7 +30,8 @@ const staffMembers = [
 const allowedUserIds = new Set(staffMembers.map((member) => member.userId));
 
 function getBaseUrl(req) {
-  const proto = req.headers['x-forwarded-proto'] || 'http';
+  const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
+  const proto = forwardedProto || 'http';
   const host = req.headers.host;
   return `${proto}://${host}`;
 }
@@ -57,7 +59,20 @@ function normalizeRedirectUri(uri) {
 
 function getRedirectUri(req) {
   const normalizedConfiguredUri = normalizeRedirectUri(configuredRedirectUri);
-  return normalizedConfiguredUri || `${getBaseUrl(req)}/auth/discord/callback`;
+  if (normalizedConfiguredUri) {
+    return normalizedConfiguredUri;
+  }
+
+  const normalizedPublicBaseUrl = normalizeRedirectUri(publicBaseUrl);
+  if (normalizedPublicBaseUrl) {
+    const parsedBase = new URL(normalizedPublicBaseUrl);
+    parsedBase.pathname = '/auth/discord/callback';
+    parsedBase.search = '';
+    parsedBase.hash = '';
+    return parsedBase.toString();
+  }
+
+  return `${getBaseUrl(req)}/auth/discord/callback`;
 }
 
 function parseCookies(req) {
@@ -486,6 +501,18 @@ const server = http.createServer((req, res) => {
       message: authorized
         ? null
         : 'You are not a valid id please contact a Developer to be added to the system'
+    });
+    return;
+  }
+
+  if (requestPath === '/api/oauth-debug') {
+    const redirectUri = getRedirectUri(req);
+    sendJson(res, {
+      redirectUri,
+      clientIdConfigured: Boolean(discordClientId),
+      clientSecretConfigured: Boolean(discordClientSecret),
+      configuredRedirectUri,
+      publicBaseUrl
     });
     return;
   }
