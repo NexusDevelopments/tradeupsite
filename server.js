@@ -9,12 +9,80 @@ const inviteLink = `https://discord.gg/${inviteCode}`;
 const serverId = '1470184067776647284';
 const permanentInviteUrl = (process.env.PERMANENT_INVITE_URL || '').trim();
 const discordBotToken = (process.env.DISCORD_BOT_TOKEN || '').trim();
+let discordClient = null;
+let discordClientReady = false;
 
 const staffMembers = [
   { userId: '1057806013639704676', role: 'Owner' },
   { userId: '1123305643458183228', role: 'Owner' },
   { userId: '1435310225010987088', role: 'Developer' }
 ];
+
+function normalizeDiscordStatus(status) {
+  if (status === 'online' || status === 'idle' || status === 'dnd') {
+    return status;
+  }
+  if (status === 'invisible') {
+    return 'offline';
+  }
+  return 'offline';
+}
+
+async function getStaffMemberFromBot(guildId, userId) {
+  if (!discordClientReady || !discordClient) {
+    return null;
+  }
+
+  try {
+    const guild = await discordClient.guilds.fetch(guildId);
+    const member = await guild.members.fetch(userId);
+    const user = member?.user || await discordClient.users.fetch(userId);
+
+    return {
+      username: user?.username || null,
+      displayName: member?.displayName || user?.globalName || user?.username || null,
+      avatarUrl: user?.displayAvatarURL({ extension: 'png', size: 256 }) || null,
+      status: member?.presence?.status ? normalizeDiscordStatus(member.presence.status) : null
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function startDiscordBotClient() {
+  if (!discordBotToken) {
+    return;
+  }
+
+  try {
+    const { Client, GatewayIntentBits } = require('discord.js');
+
+    discordClient = new Client({
+      intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildPresences
+      ]
+    });
+
+    discordClient.on('ready', () => {
+      discordClientReady = true;
+      console.log(`Discord bot online as ${discordClient.user?.tag || 'unknown'}`);
+    });
+
+    discordClient.on('shardDisconnect', () => {
+      discordClientReady = false;
+    });
+
+    discordClient.on('error', (error) => {
+      console.error('Discord client error:', error.message);
+    });
+
+    await discordClient.login(discordBotToken);
+  } catch (error) {
+    console.error('Discord bot startup failed:', error.message);
+  }
+}
 
 async function getWidgetMembers(guildId) {
   if (!guildId) {
@@ -62,16 +130,20 @@ function getUserAvatarUrl(user) {
 
 async function resolveStaffMember(staffMember, guildId, widgetMembers) {
   const widgetMember = widgetMembers.find((member) => String(member.id) === String(staffMember.userId));
+  const botMember = await getStaffMemberFromBot(guildId, staffMember.userId);
   const userFromApi = await discordApiGet(`https://discord.com/api/v10/users/${staffMember.userId}`);
   const guildMemberFromApi = await discordApiGet(`https://discord.com/api/v10/guilds/${guildId}/members/${staffMember.userId}`);
 
-  const username = userFromApi?.username || widgetMember?.username || null;
-  const displayName = guildMemberFromApi?.nick
+  const username = botMember?.username || userFromApi?.username || widgetMember?.username || null;
+  const displayName = botMember?.displayName
+    || guildMemberFromApi?.nick
     || userFromApi?.global_name
     || widgetMember?.global_name
     || username;
-  const avatarUrl = getUserAvatarUrl(userFromApi) || widgetMember?.avatar_url || null;
-  const status = widgetMember?.status || (guildMemberFromApi ? 'unknown' : 'offline');
+  const avatarUrl = botMember?.avatarUrl || getUserAvatarUrl(userFromApi) || widgetMember?.avatar_url || null;
+  const status = botMember?.status
+    || widgetMember?.status
+    || (guildMemberFromApi ? 'unknown' : 'offline');
 
   return {
     userId: staffMember.userId,
@@ -155,7 +227,8 @@ async function getDiscordServerData() {
     memberCount: inviteData.approximate_member_count ?? null,
     onlineCount: inviteData.approximate_presence_count ?? null,
     staffMembers: enrichedStaffMembers,
-    supportsFullLookup: Boolean(discordBotToken)
+    supportsFullLookup: Boolean(discordBotToken),
+    supportsLivePresence: Boolean(discordClientReady)
   };
 }
 
@@ -185,7 +258,8 @@ const server = http.createServer((req, res) => {
             status: 'offline',
             resolved: false
           })),
-          supportsFullLookup: Boolean(discordBotToken)
+          supportsFullLookup: Boolean(discordBotToken),
+          supportsLivePresence: Boolean(discordClientReady)
         }));
       });
     return;
@@ -209,6 +283,8 @@ const server = http.createServer((req, res) => {
   });
 });
 
-server.listen(port, () => {
-  console.log(`TradeUp React site running on port ${port}`);
+startDiscordBotClient().finally(() => {
+  server.listen(port, () => {
+    console.log(`TradeUp React site running on port ${port}`);
+  });
 });
