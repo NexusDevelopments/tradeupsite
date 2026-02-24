@@ -8,6 +8,21 @@ const fallbackStaffMembers = [
   { userId: '1435310225010987088', role: 'Developer' }
 ];
 
+const tabs = [
+  { label: 'Home', path: '/' },
+  { label: 'Server ID', path: '/server-id' },
+  { label: 'Our Team', path: '/team' },
+  { label: 'Join Server', path: '/join-server' }
+];
+
+function normalizePath(pathname) {
+  const path = pathname || '/';
+  if (path === '/') {
+    return '/';
+  }
+  return path.endsWith('/') ? path.slice(0, -1) : path;
+}
+
 function App() {
   const [serverData, setServerData] = useState({
     inviteLink: fallbackInviteLink,
@@ -18,6 +33,7 @@ function App() {
     onlineCount: null,
     staffMembers: fallbackStaffMembers
   });
+  const [currentPath, setCurrentPath] = useState(normalizePath(window.location.pathname));
 
   useEffect(() => {
     let isMounted = true;
@@ -48,32 +64,82 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const onPopState = () => {
+      setCurrentPath(normalizePath(window.location.pathname));
+    };
+
+    window.addEventListener('popstate', onPopState);
+    return () => {
+      window.removeEventListener('popstate', onPopState);
+    };
+  }, []);
+
   const statsText = serverData.onlineCount !== null && serverData.memberCount !== null
     ? `${serverData.onlineCount.toLocaleString()} Online · ${serverData.memberCount.toLocaleString()} Members`
     : 'Live member data unavailable';
 
-  return (
-    <>
-      <header className="site-header">
-        <div className="container nav">
-          <div className="brand-wrap">
-            {serverData.iconUrl ? (
-              <img
-                className="brand-logo"
-                src={serverData.iconUrl}
-                alt={`${serverData.serverName} logo`}
-                loading="lazy"
-              />
-            ) : (
-              <div className="brand-logo brand-logo-fallback">T</div>
-            )}
-            <div className="brand">Trade<span>Up</span></div>
-          </div>
-          <a className="btn" href={serverData.inviteLink} target="_blank" rel="noreferrer">Join Server</a>
-        </div>
-      </header>
+  const navigateTo = (path) => {
+    const normalizedPath = normalizePath(path);
+    if (normalizedPath === currentPath) {
+      return;
+    }
 
-      <main className="container">
+    window.history.pushState({}, '', normalizedPath);
+    setCurrentPath(normalizedPath);
+  };
+
+  const handleNavClick = (event, path) => {
+    event.preventDefault();
+    navigateTo(path);
+  };
+
+  const validPaths = new Set(tabs.map((tab) => tab.path));
+  const activePath = validPaths.has(currentPath) ? currentPath : '/';
+
+  const renderRouteContent = () => {
+    if (activePath === '/server-id') {
+      return (
+        <section className="panel route-panel">
+          <h2>Official Server ID</h2>
+          <p>Verify this ID before trading so you avoid fake servers and fake middlemen.</p>
+          <div className="server-id">{serverData.serverId}</div>
+        </section>
+      );
+    }
+
+    if (activePath === '/team') {
+      return (
+        <section className="panel route-panel">
+          <h2>Our Team</h2>
+          <p>Official TradeUp staff members and roles.</p>
+          <div className="staff-list">
+            {serverData.staffMembers.map((member) => (
+              <div className="founder" key={member.userId}>
+                <div className="avatar">{member.role[0]}</div>
+                <div>
+                  <strong>{member.role}</strong>
+                  <p>ID: {member.userId}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      );
+    }
+
+    if (activePath === '/join-server') {
+      return (
+        <section className="panel route-panel">
+          <h2>Join Our Discord Server</h2>
+          <p>Use the official invite below to enter the TradeUp Roblox middleman server.</p>
+          <a className="btn" href={serverData.inviteLink} target="_blank" rel="noreferrer">Join Server</a>
+        </section>
+      );
+    }
+
+    return (
+      <>
         <section className="hero">
           <p className="eyebrow">Roblox Trading Middleman</p>
           <h1>Safe Roblox Trades with Verified Middlemen</h1>
@@ -82,7 +148,7 @@ function App() {
           </p>
           <div className="hero-actions">
             <a className="btn" href={serverData.inviteLink} target="_blank" rel="noreferrer">Request a Middleman</a>
-            <a className="btn btn-outline" href="#identity">Verify Official Server</a>
+            <a className="btn btn-outline" href="/server-id" onClick={(event) => handleNavClick(event, '/server-id')}>Verify Official Server</a>
           </div>
           <div className="stats">{statsText}</div>
         </section>
@@ -104,36 +170,52 @@ function App() {
             <p>Focused support for limited trading, cross-trades, and account deals.</p>
           </article>
         </section>
+      </>
+    );
+  };
 
-        <section className="split" id="identity">
-          <article className="panel">
-            <h2>Verify Our Identity</h2>
-            <p>Always confirm this server ID before sending items or Robux to avoid fake middleman servers.</p>
-            <div className="server-id">{serverData.serverId}</div>
-          </article>
+  return (
+    <>
+      <header className="site-header">
+        <div className="container nav">
+          <div className="brand-wrap">
+            {serverData.iconUrl ? (
+              <img
+                className="brand-logo"
+                src={serverData.iconUrl}
+                alt={`${serverData.serverName} logo`}
+                loading="lazy"
+              />
+            ) : (
+              <div className="brand-logo brand-logo-fallback">T</div>
+            )}
+            <div className="brand">Trade<span>Up</span></div>
+          </div>
+          <a className="btn" href={serverData.inviteLink} target="_blank" rel="noreferrer">Join Server</a>
+        </div>
+        <div className="container tabs">
+          {tabs.map((tab) => (
+            <a
+              key={tab.path}
+              href={tab.path}
+              onClick={(event) => handleNavClick(event, tab.path)}
+              className={`tab ${activePath === tab.path ? 'tab-active' : ''}`}
+            >
+              {tab.label}
+            </a>
+          ))}
+        </div>
+      </header>
 
-          <article className="panel">
-            <h2>Middleman Team</h2>
-            <p>Our staff is trained to keep Roblox trades clear, documented, and secure.</p>
-            <div className="staff-list">
-              {serverData.staffMembers.map((member) => (
-                <div className="founder" key={member.userId}>
-                  <div className="avatar">{member.role[0]}</div>
-                  <div>
-                    <strong>{member.role}</strong>
-                    <p>ID: {member.userId}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </article>
-        </section>
+      <main className="container">
+        {renderRouteContent()}
 
-        <section className="panel links">
+        <section className="panel links route-panel">
           <h2>Quick Links</h2>
           <ul>
             <li><a href={serverData.inviteLink} target="_blank" rel="noreferrer">Join Roblox Middleman Discord</a></li>
-            <li><a href="#identity">Check Server ID</a></li>
+            <li><a href="/server-id" onClick={(event) => handleNavClick(event, '/server-id')}>Check Server ID</a></li>
+            <li><a href="/team" onClick={(event) => handleNavClick(event, '/team')}>View Team</a></li>
           </ul>
         </section>
       </main>
