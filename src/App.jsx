@@ -39,6 +39,14 @@ const tabs = [
   { label: 'Join Server', path: '/join-server' }
 ];
 
+const statusEmoji = {
+  online: '🟢',
+  idle: '🌙',
+  dnd: '⛔',
+  offline: '⚫',
+  unknown: '⚪'
+};
+
 function normalizePath(pathname) {
   const path = pathname || '/';
   if (path === '/') {
@@ -63,30 +71,36 @@ function App() {
   useEffect(() => {
     let isMounted = true;
 
-    fetch('/api/discord-server')
-      .then((response) => response.json())
-      .then((data) => {
-        if (!isMounted) {
-          return;
-        }
+    const loadServerData = () => {
+      fetch('/api/discord-server')
+        .then((response) => response.json())
+        .then((data) => {
+          if (!isMounted) {
+            return;
+          }
 
-        setServerData({
-          inviteLink: data.inviteLink || fallbackInviteLink,
-          serverId: data.serverId || fallbackServerId,
-          serverName: data.serverName || 'TradeUp',
-          iconUrl: data.iconUrl || null,
-          memberCount: Number.isInteger(data.memberCount) ? data.memberCount : null,
-          onlineCount: Number.isInteger(data.onlineCount) ? data.onlineCount : null,
-          staffMembers: Array.isArray(data.staffMembers) && data.staffMembers.length > 0
-            ? data.staffMembers
-            : fallbackStaffMembers,
-          supportsFullLookup: Boolean(data.supportsFullLookup)
-        });
-      })
-      .catch(() => {});
+          setServerData({
+            inviteLink: data.inviteLink || fallbackInviteLink,
+            serverId: data.serverId || fallbackServerId,
+            serverName: data.serverName || 'TradeUp',
+            iconUrl: data.iconUrl || null,
+            memberCount: Number.isInteger(data.memberCount) ? data.memberCount : null,
+            onlineCount: Number.isInteger(data.onlineCount) ? data.onlineCount : null,
+            staffMembers: Array.isArray(data.staffMembers) && data.staffMembers.length > 0
+              ? data.staffMembers
+              : fallbackStaffMembers,
+            supportsFullLookup: Boolean(data.supportsFullLookup)
+          });
+        })
+        .catch(() => {});
+    };
+
+    loadServerData();
+    const intervalId = window.setInterval(loadServerData, 30000);
 
     return () => {
       isMounted = false;
+      window.clearInterval(intervalId);
     };
   }, []);
 
@@ -145,11 +159,16 @@ function App() {
           <div className="staff-list">
             {serverData.staffMembers.map((member) => (
               <div className="founder" key={member.userId}>
-                {member.avatarUrl ? (
-                  <img className="avatar avatar-img" src={member.avatarUrl} alt={`${member.displayName || member.role} avatar`} loading="lazy" />
-                ) : (
-                  <div className="avatar">{member.role[0]}</div>
-                )}
+                <div className="avatar-wrap">
+                  {member.avatarUrl ? (
+                    <img className="avatar avatar-img" src={member.avatarUrl} alt={`${member.displayName || member.role} avatar`} loading="lazy" />
+                  ) : (
+                    <div className="avatar">{member.role[0]}</div>
+                  )}
+                  <span className={`avatar-status status-${member.status || 'offline'}`}>
+                    {statusEmoji[member.status] || statusEmoji.offline}
+                  </span>
+                </div>
                 <div>
                   <strong>{member.displayName || 'Profile unavailable'}</strong>
                   <p>{member.username ? `@${member.username}` : 'Username unavailable'}</p>

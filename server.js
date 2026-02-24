@@ -61,7 +61,7 @@ function getUserAvatarUrl(user) {
 }
 
 async function resolveStaffMember(staffMember, guildId, widgetMembers) {
-  const widgetMember = widgetMembers.find((member) => member.id === staffMember.userId);
+  const widgetMember = widgetMembers.find((member) => String(member.id) === String(staffMember.userId));
   const userFromApi = await discordApiGet(`https://discord.com/api/v10/users/${staffMember.userId}`);
   const guildMemberFromApi = await discordApiGet(`https://discord.com/api/v10/guilds/${guildId}/members/${staffMember.userId}`);
 
@@ -71,7 +71,7 @@ async function resolveStaffMember(staffMember, guildId, widgetMembers) {
     || widgetMember?.global_name
     || username;
   const avatarUrl = getUserAvatarUrl(userFromApi) || widgetMember?.avatar_url || null;
-  const status = widgetMember?.status || 'offline';
+  const status = widgetMember?.status || (guildMemberFromApi ? 'unknown' : 'offline');
 
   return {
     userId: staffMember.userId,
