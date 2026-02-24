@@ -64,7 +64,10 @@ function App() {
     memberCount: null,
     onlineCount: null,
     staffMembers: fallbackStaffMembers,
-    supportsFullLookup: false
+    supportsFullLookup: false,
+    botOnline: false,
+    botTag: null,
+    botLastError: null
   });
   const [currentPath, setCurrentPath] = useState(normalizePath(window.location.pathname));
 
@@ -89,7 +92,10 @@ function App() {
             staffMembers: Array.isArray(data.staffMembers) && data.staffMembers.length > 0
               ? data.staffMembers
               : fallbackStaffMembers,
-            supportsFullLookup: Boolean(data.supportsFullLookup)
+            supportsFullLookup: Boolean(data.supportsFullLookup),
+            botOnline: Boolean(data.botOnline),
+            botTag: data.botTag || null,
+            botLastError: data.botLastError || null
           });
         })
         .catch(() => {});
@@ -103,6 +109,20 @@ function App() {
       window.clearInterval(intervalId);
     };
   }, []);
+
+  useEffect(() => {
+    const iconHref = serverData.iconUrl || '/favicon.svg';
+    let faviconLink = document.querySelector('link[rel="icon"]');
+
+    if (!faviconLink) {
+      faviconLink = document.createElement('link');
+      faviconLink.setAttribute('rel', 'icon');
+      document.head.appendChild(faviconLink);
+    }
+
+    faviconLink.setAttribute('type', 'image/png');
+    faviconLink.setAttribute('href', `${iconHref}${iconHref.includes('?') ? '&' : '?'}v=${Date.now()}`);
+  }, [serverData.iconUrl]);
 
   useEffect(() => {
     const onPopState = () => {
@@ -153,6 +173,9 @@ function App() {
         <section className="panel route-panel">
           <h2>Our Team</h2>
           <p>Official TradeUp staff members from Discord user ID lookup and live status.</p>
+          {!serverData.botOnline && (
+            <p className="lookup-note">Bot presence stream offline{serverData.botLastError ? `: ${serverData.botLastError}` : ''}</p>
+          )}
           {!serverData.supportsFullLookup && (
             <p className="lookup-note">Set DISCORD_BOT_TOKEN in Railway to load full username and avatar for offline users.</p>
           )}

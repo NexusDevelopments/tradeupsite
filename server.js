@@ -8,9 +8,12 @@ const inviteCode = 'rM43kyut';
 const inviteLink = `https://discord.gg/${inviteCode}`;
 const serverId = '1470184067776647284';
 const permanentInviteUrl = (process.env.PERMANENT_INVITE_URL || '').trim();
-const discordBotToken = (process.env.DISCORD_BOT_TOKEN || '').trim();
+const rawDiscordToken = (process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN || '').trim();
+const discordBotToken = rawDiscordToken.replace(/^Bot\s+/i, '');
 let discordClient = null;
 let discordClientReady = false;
+let discordClientTag = null;
+let discordLastError = null;
 
 const staffMembers = [
   { userId: '1057806013639704676', role: 'Owner' },
@@ -51,6 +54,7 @@ async function getStaffMemberFromBot(guildId, userId) {
 
 async function startDiscordBotClient() {
   if (!discordBotToken) {
+    discordLastError = 'Missing DISCORD_BOT_TOKEN (or DISCORD_TOKEN)';
     return;
   }
 
@@ -67,6 +71,8 @@ async function startDiscordBotClient() {
 
     discordClient.on('ready', () => {
       discordClientReady = true;
+      discordClientTag = discordClient.user?.tag || null;
+      discordLastError = null;
       console.log(`Discord bot online as ${discordClient.user?.tag || 'unknown'}`);
     });
 
@@ -74,12 +80,22 @@ async function startDiscordBotClient() {
       discordClientReady = false;
     });
 
+    discordClient.on('shardResume', () => {
+      discordClientReady = true;
+    });
+
     discordClient.on('error', (error) => {
+      discordLastError = error.message;
       console.error('Discord client error:', error.message);
+    });
+
+    discordClient.on('warn', (warning) => {
+      console.warn('Discord client warning:', warning);
     });
 
     await discordClient.login(discordBotToken);
   } catch (error) {
+    discordLastError = error.message;
     console.error('Discord bot startup failed:', error.message);
   }
 }
@@ -228,7 +244,10 @@ async function getDiscordServerData() {
     onlineCount: inviteData.approximate_presence_count ?? null,
     staffMembers: enrichedStaffMembers,
     supportsFullLookup: Boolean(discordBotToken),
-    supportsLivePresence: Boolean(discordClientReady)
+    supportsLivePresence: Boolean(discordClientReady),
+    botOnline: Boolean(discordClientReady),
+    botTag: discordClientTag,
+    botLastError: discordLastError
   };
 }
 
@@ -259,9 +278,23 @@ const server = http.createServer((req, res) => {
             resolved: false
           })),
           supportsFullLookup: Boolean(discordBotToken),
-          supportsLivePresence: Boolean(discordClientReady)
+          supportsLivePresence: Boolean(discordClientReady),
+          botOnline: Boolean(discordClientReady),
+          botTag: discordClientTag,
+          botLastError: discordLastError
         }));
       });
+    return;
+  }
+
+  if (requestPath === '/api/bot-health') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({
+      botOnline: Boolean(discordClientReady),
+      botTag: discordClientTag,
+      tokenConfigured: Boolean(discordBotToken),
+      lastError: discordLastError
+    }));
     return;
   }
 
