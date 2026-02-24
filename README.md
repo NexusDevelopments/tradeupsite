@@ -11,7 +11,9 @@ This project uses React + Vite for the frontend and a small Node server for Rail
 
 ## Local production preview
 
-1. Build and serve (same entry as Railway):
+1. Build assets:
+	- `npm run build`
+2. Serve built files (same runtime entry as Railway):
 	- `npm start`
 2. Open:
 	- `http://localhost:3000`
