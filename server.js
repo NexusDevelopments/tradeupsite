@@ -1,6 +1,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const port = process.env.PORT || 3000;
 const root = path.join(__dirname, 'dist');
@@ -10,16 +11,127 @@ const serverId = '1470184067776647284';
 const permanentInviteUrl = (process.env.PERMANENT_INVITE_URL || '').trim();
 const rawDiscordToken = (process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN || '').trim();
 const discordBotToken = rawDiscordToken.replace(/^Bot\s+/i, '');
+const discordClientId = (process.env.DISCORD_CLIENT_ID || '').trim();
+const discordClientSecret = (process.env.DISCORD_CLIENT_SECRET || '').trim();
+const configuredRedirectUri = (process.env.DISCORD_REDIRECT_URI || '').trim();
 let discordClient = null;
 let discordClientReady = false;
 let discordClientTag = null;
 let discordLastError = null;
+const authSessions = new Map();
+const oauthStates = new Map();
 
 const staffMembers = [
   { userId: '1057806013639704676', role: 'Owner' },
   { userId: '1123305643458183228', role: 'Owner' },
   { userId: '1435310225010987088', role: 'Developer' }
 ];
+const allowedUserIds = new Set(staffMembers.map((member) => member.userId));
+
+function getBaseUrl(req) {
+  const proto = req.headers['x-forwarded-proto'] || 'http';
+  const host = req.headers.host;
+  return `${proto}://${host}`;
+}
+
+function getRedirectUri(req) {
+  return configuredRedirectUri || `${getBaseUrl(req)}/auth/discord/callback`;
+}
+
+function parseCookies(req) {
+  const cookieHeader = req.headers.cookie || '';
+  return cookieHeader
+    .split(';')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .reduce((accumulator, part) => {
+      const separatorIndex = part.indexOf('=');
+      if (separatorIndex === -1) {
+        return accumulator;
+      }
+
+      const key = part.slice(0, separatorIndex);
+      const value = decodeURIComponent(part.slice(separatorIndex + 1));
+      accumulator[key] = value;
+      return accumulator;
+    }, {});
+}
+
+function createSession(user) {
+  const sessionId = crypto.randomBytes(24).toString('hex');
+  const expiresAt = Date.now() + (1000 * 60 * 60 * 8);
+  authSessions.set(sessionId, { user, expiresAt });
+  return sessionId;
+}
+
+function getSessionUser(req) {
+  const cookies = parseCookies(req);
+  const sessionId = cookies.tradeup_session;
+  if (!sessionId) {
+    return null;
+  }
+
+  const session = authSessions.get(sessionId);
+  if (!session || session.expiresAt < Date.now()) {
+    authSessions.delete(sessionId);
+    return null;
+  }
+
+  return session.user;
+}
+
+function getSessionCookie(sessionId, req) {
+  const secureCookie = (req.headers['x-forwarded-proto'] || '').includes('https') ? '; Secure' : '';
+  return `tradeup_session=${encodeURIComponent(sessionId)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=28800${secureCookie}`;
+}
+
+function clearSessionCookie(req) {
+  const secureCookie = (req.headers['x-forwarded-proto'] || '').includes('https') ? '; Secure' : '';
+  return `tradeup_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secureCookie}`;
+}
+
+function sendJson(res, payload, statusCode = 200, extraHeaders = {}) {
+  res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8', ...extraHeaders });
+  res.end(JSON.stringify(payload));
+}
+
+async function exchangeDiscordCodeForUser(code, redirectUri) {
+  if (!discordClientId || !discordClientSecret) {
+    throw new Error('Missing DISCORD_CLIENT_ID or DISCORD_CLIENT_SECRET');
+  }
+
+  const tokenResponse = await fetch('https://discord.com/api/v10/oauth2/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: discordClientId,
+      client_secret: discordClientSecret,
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: redirectUri
+    })
+  });
+
+  if (!tokenResponse.ok) {
+    throw new Error(`Discord token exchange failed (${tokenResponse.status})`);
+  }
+
+  const tokenData = await tokenResponse.json();
+  const accessToken = tokenData.access_token;
+  if (!accessToken) {
+    throw new Error('Discord access token missing');
+  }
+
+  const userResponse = await fetch('https://discord.com/api/v10/users/@me', {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+
+  if (!userResponse.ok) {
+    throw new Error(`Discord user fetch failed (${userResponse.status})`);
+  }
+
+  return userResponse.json();
+}
 
 function normalizeDiscordStatus(status) {
   if (status === 'online' || status === 'idle' || status === 'dnd') {
@@ -255,16 +367,114 @@ async function getDiscordServerData() {
 
 const server = http.createServer((req, res) => {
   const requestPath = decodeURIComponent((req.url || '/').split('?')[0]);
+  const requestUrl = new URL(req.url || '/', getBaseUrl(req));
+
+  if (requestPath === '/auth/discord') {
+    const desiredRedirect = requestUrl.searchParams.get('redirect') || '/bot-status';
+    const safeRedirect = desiredRedirect.startsWith('/') ? desiredRedirect : '/bot-status';
+    const oauthState = crypto.randomBytes(20).toString('hex');
+    oauthStates.set(oauthState, {
+      redirect: safeRedirect,
+      expiresAt: Date.now() + (1000 * 60 * 10)
+    });
+
+    const redirectUri = getRedirectUri(req);
+    const authUrl = `https://discord.com/oauth2/authorize?${new URLSearchParams({
+      client_id: discordClientId,
+      response_type: 'code',
+      scope: 'identify',
+      redirect_uri: redirectUri,
+      prompt: 'none',
+      state: oauthState
+    }).toString()}`;
+
+    res.writeHead(302, { Location: authUrl });
+    res.end();
+    return;
+  }
+
+  if (requestPath === '/auth/discord/callback') {
+    const code = requestUrl.searchParams.get('code');
+    const state = requestUrl.searchParams.get('state');
+    const stateRecord = state ? oauthStates.get(state) : null;
+
+    if (!code || !stateRecord || stateRecord.expiresAt < Date.now()) {
+      if (state) {
+        oauthStates.delete(state);
+      }
+      res.writeHead(302, { Location: '/bot-status?error=oauth-state' });
+      res.end();
+      return;
+    }
+
+    oauthStates.delete(state);
+    exchangeDiscordCodeForUser(code, getRedirectUri(req))
+      .then((discordUser) => {
+        const userId = String(discordUser.id || '');
+        if (!allowedUserIds.has(userId)) {
+          res.writeHead(302, {
+            Location: '/bot-status?error=not-allowed',
+            'Set-Cookie': clearSessionCookie(req)
+          });
+          res.end();
+          return;
+        }
+
+        const sessionId = createSession({
+          id: userId,
+          username: discordUser.username || null,
+          globalName: discordUser.global_name || null,
+          avatar: discordUser.avatar || null
+        });
+
+        res.writeHead(302, {
+          Location: stateRecord.redirect,
+          'Set-Cookie': getSessionCookie(sessionId, req)
+        });
+        res.end();
+      })
+      .catch(() => {
+        res.writeHead(302, {
+          Location: '/bot-status?error=oauth-failed',
+          'Set-Cookie': clearSessionCookie(req)
+        });
+        res.end();
+      });
+    return;
+  }
+
+  if (requestPath === '/auth/logout') {
+    res.writeHead(302, {
+      Location: '/bot-status',
+      'Set-Cookie': clearSessionCookie(req)
+    });
+    res.end();
+    return;
+  }
+
+  if (requestPath === '/api/auth/me') {
+    const user = getSessionUser(req);
+    const userId = user?.id ? String(user.id) : null;
+    const authorized = Boolean(userId && allowedUserIds.has(userId));
+
+    sendJson(res, {
+      authenticated: Boolean(user),
+      authorized,
+      user: user || null,
+      message: authorized
+        ? null
+        : 'You are not a valid id please contact a Developer to be added to the system'
+    });
+    return;
+  }
 
   if (requestPath === '/api/discord-server') {
     getDiscordServerData()
       .then((data) => {
-        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify(data));
+        sendJson(res, data);
       })
       .catch(() => {
-        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({
+        sendJson(res, {
           inviteLink: permanentInviteUrl || inviteLink,
           serverId,
           serverName: 'TradeUp',
@@ -284,19 +494,18 @@ const server = http.createServer((req, res) => {
           botOnline: Boolean(discordClientReady),
           botTag: discordClientTag,
           botLastError: discordLastError
-        }));
+        });
       });
     return;
   }
 
   if (requestPath === '/api/bot-health') {
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({
+    sendJson(res, {
       botOnline: Boolean(discordClientReady),
       botTag: discordClientTag,
       tokenConfigured: Boolean(discordBotToken),
       lastError: discordLastError
-    }));
+    });
     return;
   }
 

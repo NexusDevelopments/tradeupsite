@@ -36,7 +36,8 @@ const tabs = [
   { label: 'Home', path: '/' },
   { label: 'Server ID', path: '/server-id' },
   { label: 'Our Team', path: '/team' },
-  { label: 'Join Server', path: '/join-server' }
+  { label: 'Join Server', path: '/join-server' },
+  { label: 'Bot Status', path: '/bot-status' }
 ];
 
 const statusEmoji = {
@@ -68,6 +69,18 @@ function App() {
     botOnline: false,
     botTag: null,
     botLastError: null
+  });
+  const [authState, setAuthState] = useState({
+    authenticated: false,
+    authorized: false,
+    user: null,
+    message: null
+  });
+  const [botHealth, setBotHealth] = useState({
+    botOnline: false,
+    botTag: null,
+    tokenConfigured: false,
+    lastError: null
   });
   const [currentPath, setCurrentPath] = useState(normalizePath(window.location.pathname));
 
@@ -109,6 +122,50 @@ function App() {
       window.clearInterval(intervalId);
     };
   }, []);
+
+  useEffect(() => {
+    if (currentPath !== '/bot-status') {
+      return;
+    }
+
+    fetch('/api/auth/me')
+      .then((response) => response.json())
+      .then((data) => {
+        setAuthState({
+          authenticated: Boolean(data.authenticated),
+          authorized: Boolean(data.authorized),
+          user: data.user || null,
+          message: data.message || null
+        });
+      })
+      .catch(() => {
+        setAuthState({
+          authenticated: false,
+          authorized: false,
+          user: null,
+          message: 'You are not a valid id please contact a Developer to be added to the system'
+        });
+      });
+
+    fetch('/api/bot-health')
+      .then((response) => response.json())
+      .then((data) => {
+        setBotHealth({
+          botOnline: Boolean(data.botOnline),
+          botTag: data.botTag || null,
+          tokenConfigured: Boolean(data.tokenConfigured),
+          lastError: data.lastError || null
+        });
+      })
+      .catch(() => {
+        setBotHealth({
+          botOnline: false,
+          botTag: null,
+          tokenConfigured: false,
+          lastError: 'Unable to load bot health'
+        });
+      });
+  }, [currentPath]);
 
   useEffect(() => {
     const iconHref = serverData.iconUrl || '/favicon.svg';
@@ -156,6 +213,7 @@ function App() {
 
   const validPaths = new Set(tabs.map((tab) => tab.path));
   const activePath = validPaths.has(currentPath) ? currentPath : '/';
+  const pageError = new URLSearchParams(window.location.search).get('error');
 
   const renderRouteContent = () => {
     if (activePath === '/server-id') {
@@ -213,6 +271,38 @@ function App() {
           <h2>Join Our Discord Server</h2>
           <p>Use the official invite below to enter the TradeUp Roblox middleman server.</p>
           <a className="btn" href={serverData.inviteLink} target="_blank" rel="noreferrer">Join Server</a>
+        </section>
+      );
+    }
+
+    if (activePath === '/bot-status') {
+      if (!authState.authorized) {
+        return (
+          <section className="panel route-panel">
+            <h2>Bot Status Verification</h2>
+            <p>Verify with Discord OAuth to access this page.</p>
+            {pageError === 'not-allowed' && (
+              <p className="lookup-note">You are not a valid id please contact a Developer to be added to the system</p>
+            )}
+            {authState.message && (
+              <p className="lookup-note">{authState.message}</p>
+            )}
+            <a className="btn" href="/auth/discord?redirect=/bot-status">Verify</a>
+          </section>
+        );
+      }
+
+      return (
+        <section className="panel route-panel">
+          <h2>Bot Status</h2>
+          <p>Verified as {authState.user?.globalName || authState.user?.username || authState.user?.id}</p>
+          <div className={`status-pill ${botHealth.botOnline ? 'status-online' : 'status-offline'}`}>
+            {botHealth.botOnline ? 'Bot Online' : 'Bot Offline'}
+          </div>
+          {botHealth.botTag && <p>Client: {botHealth.botTag}</p>}
+          {!botHealth.tokenConfigured && <p className="lookup-note">DISCORD_BOT_TOKEN is not configured.</p>}
+          {botHealth.lastError && <p className="lookup-note">Error: {botHealth.lastError}</p>}
+          <a className="btn btn-outline" href="/auth/logout">Log Out</a>
         </section>
       );
     }
