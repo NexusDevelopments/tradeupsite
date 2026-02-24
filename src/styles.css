@@ -130,6 +130,12 @@ body {
   border-color: rgba(101, 176, 255, 0.75);
 }
 
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .btn-outline {
   background: rgba(15, 27, 51, 0.55);
   border-color: rgba(101, 176, 255, 0.25);
@@ -334,6 +340,26 @@ body {
 
 .links {
   margin-bottom: 2rem;
+}
+
+.bot-actions {
+  margin-top: 0.8rem;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.guild-list {
+  margin-top: 0.8rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.guild-item {
+  border: 1px solid rgba(101, 176, 255, 0.25);
+  background: rgba(101, 176, 255, 0.08);
+  border-radius: 12px;
+  padding: 0.6rem 0.75rem;
 }
 
 .links ul {

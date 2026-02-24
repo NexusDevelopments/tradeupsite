@@ -79,7 +79,15 @@ function App() {
     botOnline: false,
     botTag: null,
     tokenConfigured: false,
-    lastError: null
+    lastError: null,
+    guildCount: 0,
+    totalMembers: 0,
+    uptimeSeconds: 0,
+    guilds: []
+  });
+  const [controlState, setControlState] = useState({
+    busy: false,
+    message: null
   });
   const [currentPath, setCurrentPath] = useState(normalizePath(window.location.pathname));
 
@@ -127,6 +135,35 @@ function App() {
       return;
     }
 
+    const loadBotHealth = () => {
+      fetch('/api/bot-health')
+        .then((response) => response.json())
+        .then((data) => {
+          setBotHealth({
+            botOnline: Boolean(data.botOnline),
+            botTag: data.botTag || null,
+            tokenConfigured: Boolean(data.tokenConfigured),
+            lastError: data.lastError || null,
+            guildCount: Number.isInteger(data.guildCount) ? data.guildCount : 0,
+            totalMembers: Number.isInteger(data.totalMembers) ? data.totalMembers : 0,
+            uptimeSeconds: Number.isInteger(data.uptimeSeconds) ? data.uptimeSeconds : 0,
+            guilds: Array.isArray(data.guilds) ? data.guilds : []
+          });
+        })
+        .catch(() => {
+          setBotHealth({
+            botOnline: false,
+            botTag: null,
+            tokenConfigured: false,
+            lastError: 'Unable to load bot health',
+            guildCount: 0,
+            totalMembers: 0,
+            uptimeSeconds: 0,
+            guilds: []
+          });
+        });
+    };
+
     fetch('/api/auth/me')
       .then((response) => response.json())
       .then((data) => {
@@ -146,24 +183,11 @@ function App() {
         });
       });
 
-    fetch('/api/bot-health')
-      .then((response) => response.json())
-      .then((data) => {
-        setBotHealth({
-          botOnline: Boolean(data.botOnline),
-          botTag: data.botTag || null,
-          tokenConfigured: Boolean(data.tokenConfigured),
-          lastError: data.lastError || null
-        });
-      })
-      .catch(() => {
-        setBotHealth({
-          botOnline: false,
-          botTag: null,
-          tokenConfigured: false,
-          lastError: 'Unable to load bot health'
-        });
-      });
+    loadBotHealth();
+    const intervalId = window.setInterval(loadBotHealth, 12000);
+    return () => {
+      window.clearInterval(intervalId);
+    };
   }, [currentPath]);
 
   useEffect(() => {
@@ -213,6 +237,41 @@ function App() {
   const validPaths = new Set([...tabs.map((tab) => tab.path), '/bot-status']);
   const activePath = validPaths.has(currentPath) ? currentPath : '/';
   const pageError = new URLSearchParams(window.location.search).get('error');
+  const uptimeText = botHealth.uptimeSeconds > 0
+    ? `${Math.floor(botHealth.uptimeSeconds / 3600)}h ${Math.floor((botHealth.uptimeSeconds % 3600) / 60)}m`
+    : '0h 0m';
+
+  const runControlAction = (action) => {
+    if (controlState.busy) {
+      return;
+    }
+
+    setControlState({ busy: true, message: `${action} in progress...` });
+    fetch(`/api/bot-control?action=${action}`, { method: 'POST' })
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.message || 'Control action failed');
+        }
+
+        const runtime = data.runtime || {};
+        setBotHealth((current) => ({
+          ...current,
+          botOnline: Boolean(runtime.botOnline),
+          botTag: runtime.botTag || null,
+          tokenConfigured: Boolean(runtime.tokenConfigured),
+          lastError: runtime.lastError || null,
+          guildCount: Number.isInteger(runtime.guildCount) ? runtime.guildCount : 0,
+          totalMembers: Number.isInteger(runtime.totalMembers) ? runtime.totalMembers : 0,
+          uptimeSeconds: Number.isInteger(runtime.uptimeSeconds) ? runtime.uptimeSeconds : 0,
+          guilds: Array.isArray(runtime.guilds) ? runtime.guilds : []
+        }));
+        setControlState({ busy: false, message: `Bot ${action} completed.` });
+      })
+      .catch((error) => {
+        setControlState({ busy: false, message: error.message || 'Control action failed' });
+      });
+  };
 
   const renderRouteContent = () => {
     if (activePath === '/server-id') {
@@ -299,6 +358,26 @@ function App() {
             {botHealth.botOnline ? 'Bot Online' : 'Bot Offline'}
           </div>
           {botHealth.botTag && <p>Client: {botHealth.botTag}</p>}
+          <p>Servers: {botHealth.guildCount}</p>
+          <p>Total Members: {botHealth.totalMembers.toLocaleString()}</p>
+          <p>Uptime: {uptimeText}</p>
+          <div className="bot-actions">
+            <button className="btn" type="button" onClick={() => runControlAction('start')} disabled={controlState.busy}>Start</button>
+            <button className="btn" type="button" onClick={() => runControlAction('stop')} disabled={controlState.busy}>Stop</button>
+            <button className="btn" type="button" onClick={() => runControlAction('restart')} disabled={controlState.busy}>Restart</button>
+          </div>
+          {controlState.message && <p className="lookup-note">{controlState.message}</p>}
+          {botHealth.guilds.length > 0 && (
+            <div className="guild-list">
+              {botHealth.guilds.map((guild) => (
+                <div className="guild-item" key={guild.id}>
+                  <strong>{guild.name}</strong>
+                  <p>ID: {guild.id}</p>
+                  <p>Members: {Number.isInteger(guild.memberCount) ? guild.memberCount.toLocaleString() : 'Unknown'}</p>
+                </div>
+              ))}
+            </div>
+          )}
           {!botHealth.tokenConfigured && <p className="lookup-note">DISCORD_BOT_TOKEN is not configured.</p>}
           {botHealth.lastError && <p className="lookup-note">Error: {botHealth.lastError}</p>}
           <a className="btn btn-outline" href="/auth/logout">Log Out</a>

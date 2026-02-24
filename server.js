@@ -19,6 +19,7 @@ let discordClient = null;
 let discordClientReady = false;
 let discordClientTag = null;
 let discordLastError = null;
+let botConnectedAt = null;
 const authSessions = new Map();
 const oauthStates = new Map();
 
@@ -132,6 +133,12 @@ function sendJson(res, payload, statusCode = 200, extraHeaders = {}) {
   res.end(JSON.stringify(payload));
 }
 
+function isAuthorizedRequest(req) {
+  const user = getSessionUser(req);
+  const userId = user?.id ? String(user.id) : null;
+  return Boolean(userId && allowedUserIds.has(userId));
+}
+
 async function exchangeDiscordCodeForUser(code, redirectUri) {
   if (!discordClientId || !discordClientSecret) {
     throw new Error('Missing DISCORD_CLIENT_ID or DISCORD_CLIENT_SECRET');
@@ -204,9 +211,23 @@ async function getStaffMemberFromBot(guildId, userId) {
 }
 
 async function startDiscordBotClient() {
+  if (discordClientReady) {
+    return;
+  }
+
   if (!discordBotToken) {
     discordLastError = 'Missing DISCORD_BOT_TOKEN (or DISCORD_TOKEN)';
     return;
+  }
+
+  if (discordClient) {
+    try {
+      await discordClient.destroy();
+    } catch {
+      // no-op
+    }
+    discordClient = null;
+    discordClientReady = false;
   }
 
   try {
@@ -222,6 +243,7 @@ async function startDiscordBotClient() {
 
     discordClient.on('ready', () => {
       discordClientReady = true;
+      botConnectedAt = Date.now();
       discordClientTag = discordClient.user?.tag || null;
       discordLastError = null;
       console.log(`Discord bot online as ${discordClient.user?.tag || 'unknown'}`);
@@ -229,10 +251,14 @@ async function startDiscordBotClient() {
 
     discordClient.on('shardDisconnect', () => {
       discordClientReady = false;
+      botConnectedAt = null;
     });
 
     discordClient.on('shardResume', () => {
       discordClientReady = true;
+      if (!botConnectedAt) {
+        botConnectedAt = Date.now();
+      }
     });
 
     discordClient.on('error', (error) => {
@@ -249,6 +275,71 @@ async function startDiscordBotClient() {
     discordLastError = error.message;
     console.error('Discord bot startup failed:', error.message);
   }
+}
+
+async function stopDiscordBotClient() {
+  if (!discordClient) {
+    discordClientReady = false;
+    botConnectedAt = null;
+    return;
+  }
+
+  try {
+    await discordClient.destroy();
+  } catch {
+    // no-op
+  }
+
+  discordClient = null;
+  discordClientReady = false;
+  botConnectedAt = null;
+  discordClientTag = null;
+}
+
+async function restartDiscordBotClient() {
+  await stopDiscordBotClient();
+  await startDiscordBotClient();
+}
+
+async function getBotRuntimeInfo() {
+  if (!discordClient || !discordClientReady) {
+    return {
+      botOnline: false,
+      botTag: discordClientTag,
+      tokenConfigured: Boolean(discordBotToken),
+      lastError: discordLastError,
+      guildCount: 0,
+      totalMembers: 0,
+      uptimeSeconds: 0,
+      guilds: []
+    };
+  }
+
+  const cachedGuilds = Array.from(discordClient.guilds.cache.values());
+  const guilds = await Promise.all(
+    cachedGuilds.map(async (cachedGuild) => {
+      const fullGuild = await cachedGuild.fetch().catch(() => cachedGuild);
+      return {
+        id: fullGuild.id,
+        name: fullGuild.name,
+        memberCount: Number.isInteger(fullGuild.memberCount) ? fullGuild.memberCount : null
+      };
+    })
+  );
+
+  const totalMembers = guilds.reduce((sum, guild) => sum + (guild.memberCount || 0), 0);
+  const uptimeSeconds = botConnectedAt ? Math.floor((Date.now() - botConnectedAt) / 1000) : 0;
+
+  return {
+    botOnline: true,
+    botTag: discordClientTag,
+    tokenConfigured: Boolean(discordBotToken),
+    lastError: discordLastError,
+    guildCount: guilds.length,
+    totalMembers,
+    uptimeSeconds,
+    guilds
+  };
 }
 
 async function getWidgetMembers(guildId) {
@@ -505,6 +596,42 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (requestPath === '/api/bot-control') {
+    if (req.method !== 'POST') {
+      sendJson(res, { message: 'Method not allowed' }, 405);
+      return;
+    }
+
+    if (!isAuthorizedRequest(req)) {
+      sendJson(res, {
+        message: 'You are not a valid id please contact a Developer to be added to the system'
+      }, 403);
+      return;
+    }
+
+    const action = (requestUrl.searchParams.get('action') || '').toLowerCase();
+
+    (async () => {
+      if (action === 'start') {
+        await startDiscordBotClient();
+      } else if (action === 'stop') {
+        await stopDiscordBotClient();
+      } else if (action === 'restart') {
+        await restartDiscordBotClient();
+      } else {
+        sendJson(res, { message: 'Invalid action' }, 400);
+        return;
+      }
+
+      const runtime = await getBotRuntimeInfo();
+      sendJson(res, { ok: true, action, runtime });
+    })().catch((error) => {
+      sendJson(res, { ok: false, message: error.message || 'Control action failed' }, 500);
+    });
+
+    return;
+  }
+
   if (requestPath === '/api/oauth-debug') {
     const redirectUri = getRedirectUri(req);
     sendJson(res, {
@@ -549,12 +676,22 @@ const server = http.createServer((req, res) => {
   }
 
   if (requestPath === '/api/bot-health') {
-    sendJson(res, {
-      botOnline: Boolean(discordClientReady),
-      botTag: discordClientTag,
-      tokenConfigured: Boolean(discordBotToken),
-      lastError: discordLastError
-    });
+    getBotRuntimeInfo()
+      .then((runtime) => {
+        sendJson(res, runtime);
+      })
+      .catch(() => {
+        sendJson(res, {
+          botOnline: Boolean(discordClientReady),
+          botTag: discordClientTag,
+          tokenConfigured: Boolean(discordBotToken),
+          lastError: discordLastError,
+          guildCount: 0,
+          totalMembers: 0,
+          uptimeSeconds: 0,
+          guilds: []
+        });
+      });
     return;
   }
 
