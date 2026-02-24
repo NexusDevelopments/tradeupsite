@@ -58,6 +58,25 @@ function normalizeRedirectUri(uri) {
   }
 }
 
+function toGlobalInviteLink(rawInvite) {
+  const value = String(rawInvite || '').trim();
+  if (!value) {
+    return `https://discord.com/invite/${inviteCode}`;
+  }
+
+  const directCodeMatch = value.match(/^[A-Za-z0-9-]+$/);
+  if (directCodeMatch) {
+    return `https://discord.com/invite/${value}`;
+  }
+
+  const codeMatch = value.match(/discord(?:app)?\.(?:gg|com)\/(?:invite\/)?([A-Za-z0-9-]+)/i);
+  if (codeMatch?.[1]) {
+    return `https://discord.com/invite/${codeMatch[1]}`;
+  }
+
+  return `https://discord.com/invite/${inviteCode}`;
+}
+
 function getRedirectUri(req) {
   const normalizedConfiguredUri = normalizeRedirectUri(configuredRedirectUri);
   if (normalizedConfiguredUri) {
@@ -466,8 +485,8 @@ async function getDiscordServerData() {
   const inviteData = await response.json();
   const guild = inviteData.guild || {};
   const widgetMembers = await getWidgetMembers(guild.id || serverId);
-  const vanityInviteLink = guild.vanity_url_code ? `https://discord.gg/${guild.vanity_url_code}` : null;
-  const resolvedInviteLink = permanentInviteUrl || vanityInviteLink || inviteLink;
+  const vanityInviteLink = guild.vanity_url_code ? guild.vanity_url_code : null;
+  const resolvedInviteLink = toGlobalInviteLink(permanentInviteUrl || vanityInviteLink || inviteLink);
 
   const enrichedStaffMembers = await Promise.all(
     staffMembers.map((staffMember) => resolveStaffMember(staffMember, guild.id || serverId, widgetMembers))
@@ -651,7 +670,7 @@ const server = http.createServer((req, res) => {
       })
       .catch(() => {
         sendJson(res, {
-          inviteLink: permanentInviteUrl || inviteLink,
+          inviteLink: toGlobalInviteLink(permanentInviteUrl || inviteLink),
           serverId,
           serverName: 'TradeUp',
           iconUrl: null,
