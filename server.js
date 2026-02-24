@@ -7,6 +7,7 @@ const root = path.join(__dirname, 'dist');
 const inviteCode = 'rM43kyut';
 const inviteLink = `https://discord.gg/${inviteCode}`;
 const serverId = '1470184067776647284';
+const permanentInviteUrl = (process.env.PERMANENT_INVITE_URL || '').trim();
 
 const staffMembers = [
   { userId: '1057806013639704676', role: 'Owner' },
@@ -84,6 +85,8 @@ async function getDiscordServerData() {
   const inviteData = await response.json();
   const guild = inviteData.guild || {};
   const widgetMembers = await getWidgetMembers(guild.id || serverId);
+  const vanityInviteLink = guild.vanity_url_code ? `https://discord.gg/${guild.vanity_url_code}` : null;
+  const resolvedInviteLink = permanentInviteUrl || vanityInviteLink || inviteLink;
 
   const enrichedStaffMembers = staffMembers.map((staffMember) => {
     const memberData = widgetMembers.find((member) => member.id === staffMember.userId);
@@ -105,7 +108,7 @@ async function getDiscordServerData() {
     : null;
 
   return {
-    inviteLink,
+    inviteLink: resolvedInviteLink,
     serverId: guild.id || serverId,
     serverName: guild.name || 'TradeUp',
     iconUrl,
@@ -127,7 +130,7 @@ const server = http.createServer((req, res) => {
       .catch(() => {
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({
-          inviteLink,
+          inviteLink: permanentInviteUrl || inviteLink,
           serverId,
           serverName: 'TradeUp',
           iconUrl: null,
