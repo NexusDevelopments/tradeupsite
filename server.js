@@ -40,12 +40,14 @@ async function getStaffMemberFromBot(guildId, userId) {
     const guild = await discordClient.guilds.fetch(guildId);
     const member = await guild.members.fetch(userId);
     const user = member?.user || await discordClient.users.fetch(userId);
+    const presence = await guild.presences.fetch(userId).catch(() => null);
+    const resolvedStatus = presence?.status || member?.presence?.status || null;
 
     return {
       username: user?.username || null,
       displayName: member?.displayName || user?.globalName || user?.username || null,
       avatarUrl: user?.displayAvatarURL({ extension: 'png', size: 256 }) || null,
-      status: member?.presence?.status ? normalizeDiscordStatus(member.presence.status) : null
+      status: resolvedStatus ? normalizeDiscordStatus(resolvedStatus) : null
     };
   } catch {
     return null;
