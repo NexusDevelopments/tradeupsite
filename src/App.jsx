@@ -6,26 +6,29 @@ const fallbackStaffMembers = [
   {
     userId: '1057806013639704676',
     role: 'Owner',
-    username: 'user_4676',
-    displayName: 'Owner',
+    username: null,
+    displayName: null,
     avatarUrl: null,
-    status: 'offline'
+    status: 'offline',
+    resolved: false
   },
   {
     userId: '1123305643458183228',
     role: 'Owner',
-    username: 'user_3228',
-    displayName: 'Owner',
+    username: null,
+    displayName: null,
     avatarUrl: null,
-    status: 'offline'
+    status: 'offline',
+    resolved: false
   },
   {
     userId: '1435310225010987088',
     role: 'Developer',
-    username: 'user_7088',
-    displayName: 'Developer',
+    username: null,
+    displayName: null,
     avatarUrl: null,
-    status: 'offline'
+    status: 'offline',
+    resolved: false
   }
 ];
 
@@ -52,7 +55,8 @@ function App() {
     iconUrl: null,
     memberCount: null,
     onlineCount: null,
-    staffMembers: fallbackStaffMembers
+    staffMembers: fallbackStaffMembers,
+    supportsFullLookup: false
   });
   const [currentPath, setCurrentPath] = useState(normalizePath(window.location.pathname));
 
@@ -75,7 +79,8 @@ function App() {
           onlineCount: Number.isInteger(data.onlineCount) ? data.onlineCount : null,
           staffMembers: Array.isArray(data.staffMembers) && data.staffMembers.length > 0
             ? data.staffMembers
-            : fallbackStaffMembers
+            : fallbackStaffMembers,
+          supportsFullLookup: Boolean(data.supportsFullLookup)
         });
       })
       .catch(() => {});
@@ -133,19 +138,25 @@ function App() {
       return (
         <section className="panel route-panel">
           <h2>Our Team</h2>
-          <p>Official TradeUp staff members, display names, usernames, and IDs.</p>
+          <p>Official TradeUp staff members from Discord user ID lookup and live status.</p>
+          {!serverData.supportsFullLookup && (
+            <p className="lookup-note">Set DISCORD_BOT_TOKEN in Railway to load full username and avatar for offline users.</p>
+          )}
           <div className="staff-list">
             {serverData.staffMembers.map((member) => (
               <div className="founder" key={member.userId}>
                 {member.avatarUrl ? (
-                  <img className="avatar avatar-img" src={member.avatarUrl} alt={`${member.displayName} avatar`} loading="lazy" />
+                  <img className="avatar avatar-img" src={member.avatarUrl} alt={`${member.displayName || member.role} avatar`} loading="lazy" />
                 ) : (
-                  <div className="avatar">{member.displayName[0]}</div>
+                  <div className="avatar">{member.role[0]}</div>
                 )}
                 <div>
-                  <strong>{member.displayName}</strong>
-                  <p>@{member.username}</p>
+                  <strong>{member.displayName || 'Profile unavailable'}</strong>
+                  <p>{member.username ? `@${member.username}` : 'Username unavailable'}</p>
                   <p>{member.role} · ID: {member.userId}</p>
+                  <div className={`status-pill status-${member.status || 'offline'}`}>
+                    Status: {member.status || 'offline'}
+                  </div>
                 </div>
               </div>
             ))}

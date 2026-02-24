@@ -8,6 +8,7 @@ const inviteCode = 'rM43kyut';
 const inviteLink = `https://discord.gg/${inviteCode}`;
 const serverId = '1470184067776647284';
 const permanentInviteUrl = (process.env.PERMANENT_INVITE_URL || '').trim();
+const discordBotToken = (process.env.DISCORD_BOT_TOKEN || '').trim();
 
 const staffMembers = [
   { userId: '1057806013639704676', role: 'Owner' },
@@ -31,6 +32,56 @@ async function getWidgetMembers(guildId) {
   }
 
   return widgetData.members;
+}
+
+async function discordApiGet(url) {
+  if (!discordBotToken) {
+    return null;
+  }
+
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bot ${discordBotToken}`
+    }
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  return response.json();
+}
+
+function getUserAvatarUrl(user) {
+  if (!user || !user.id || !user.avatar) {
+    return null;
+  }
+
+  return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=256`;
+}
+
+async function resolveStaffMember(staffMember, guildId, widgetMembers) {
+  const widgetMember = widgetMembers.find((member) => member.id === staffMember.userId);
+  const userFromApi = await discordApiGet(`https://discord.com/api/v10/users/${staffMember.userId}`);
+  const guildMemberFromApi = await discordApiGet(`https://discord.com/api/v10/guilds/${guildId}/members/${staffMember.userId}`);
+
+  const username = userFromApi?.username || widgetMember?.username || null;
+  const displayName = guildMemberFromApi?.nick
+    || userFromApi?.global_name
+    || widgetMember?.global_name
+    || username;
+  const avatarUrl = getUserAvatarUrl(userFromApi) || widgetMember?.avatar_url || null;
+  const status = widgetMember?.status || 'offline';
+
+  return {
+    userId: staffMember.userId,
+    role: staffMember.role,
+    username,
+    displayName,
+    avatarUrl,
+    status,
+    resolved: Boolean(username || displayName || avatarUrl)
+  };
 }
 
 const mimeTypes = {
@@ -88,20 +139,9 @@ async function getDiscordServerData() {
   const vanityInviteLink = guild.vanity_url_code ? `https://discord.gg/${guild.vanity_url_code}` : null;
   const resolvedInviteLink = permanentInviteUrl || vanityInviteLink || inviteLink;
 
-  const enrichedStaffMembers = staffMembers.map((staffMember) => {
-    const memberData = widgetMembers.find((member) => member.id === staffMember.userId);
-    const username = memberData?.username || `user_${staffMember.userId.slice(-4)}`;
-    const displayName = memberData?.global_name || memberData?.nick || username;
-
-    return {
-      userId: staffMember.userId,
-      role: staffMember.role,
-      username,
-      displayName,
-      avatarUrl: memberData?.avatar_url || null,
-      status: memberData?.status || 'offline'
-    };
-  });
+  const enrichedStaffMembers = await Promise.all(
+    staffMembers.map((staffMember) => resolveStaffMember(staffMember, guild.id || serverId, widgetMembers))
+  );
 
   const iconUrl = guild.id && guild.icon
     ? `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png?size=256`
@@ -114,7 +154,8 @@ async function getDiscordServerData() {
     iconUrl,
     memberCount: inviteData.approximate_member_count ?? null,
     onlineCount: inviteData.approximate_presence_count ?? null,
-    staffMembers: enrichedStaffMembers
+    staffMembers: enrichedStaffMembers,
+    supportsFullLookup: Boolean(discordBotToken)
   };
 }
 
@@ -138,11 +179,13 @@ const server = http.createServer((req, res) => {
           onlineCount: null,
           staffMembers: staffMembers.map((staffMember) => ({
             ...staffMember,
-            username: `user_${staffMember.userId.slice(-4)}`,
-            displayName: staffMember.role,
+            username: null,
+            displayName: null,
             avatarUrl: null,
-            status: 'offline'
-          }))
+            status: 'offline',
+            resolved: false
+          })),
+          supportsFullLookup: Boolean(discordBotToken)
         }));
       });
     return;

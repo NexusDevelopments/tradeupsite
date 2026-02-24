@@ -250,8 +250,48 @@ body {
   gap: 0.2rem;
 }
 
+.lookup-note {
+  margin-bottom: 0.7rem;
+  font-size: 0.92rem;
+}
+
 .founder p {
   font-size: 0.92rem;
+}
+
+.status-pill {
+  margin-top: 0.4rem;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.2rem 0.58rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.status-online {
+  color: #beffd4;
+  background: rgba(25, 125, 64, 0.26);
+  border-color: rgba(79, 209, 130, 0.45);
+}
+
+.status-idle {
+  color: #ffe8bf;
+  background: rgba(140, 104, 18, 0.26);
+  border-color: rgba(235, 179, 55, 0.45);
+}
+
+.status-dnd {
+  color: #ffd0d0;
+  background: rgba(145, 34, 34, 0.26);
+  border-color: rgba(243, 101, 101, 0.45);
+}
+
+.status-offline {
+  color: #d5dbeb;
+  background: rgba(90, 103, 131, 0.22);
+  border-color: rgba(151, 166, 197, 0.4);
 }
 
 .avatar {
