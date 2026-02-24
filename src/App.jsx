@@ -36,8 +36,7 @@ const tabs = [
   { label: 'Home', path: '/' },
   { label: 'Server ID', path: '/server-id' },
   { label: 'Our Team', path: '/team' },
-  { label: 'Join Server', path: '/join-server' },
-  { label: 'Bot Status', path: '/bot-status' }
+  { label: 'Join Server', path: '/join-server' }
 ];
 
 const statusEmoji = {
@@ -211,7 +210,7 @@ function App() {
     navigateTo(path);
   };
 
-  const validPaths = new Set(tabs.map((tab) => tab.path));
+  const validPaths = new Set([...tabs.map((tab) => tab.path), '/bot-status']);
   const activePath = validPaths.has(currentPath) ? currentPath : '/';
   const pageError = new URLSearchParams(window.location.search).get('error');
 
