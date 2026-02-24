@@ -34,8 +34,30 @@ function getBaseUrl(req) {
   return `${proto}://${host}`;
 }
 
+function normalizeRedirectUri(uri) {
+  if (!uri) {
+    return null;
+  }
+
+  let normalized = uri.trim();
+  if (/^https?:\/[^/]/i.test(normalized)) {
+    normalized = normalized.replace(/^http:\//i, 'http://').replace(/^https:\//i, 'https://');
+  }
+
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      return null;
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
 function getRedirectUri(req) {
-  return configuredRedirectUri || `${getBaseUrl(req)}/auth/discord/callback`;
+  const normalizedConfiguredUri = normalizeRedirectUri(configuredRedirectUri);
+  return normalizedConfiguredUri || `${getBaseUrl(req)}/auth/discord/callback`;
 }
 
 function parseCookies(req) {
