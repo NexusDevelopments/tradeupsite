@@ -661,7 +661,7 @@ function App() {
             TradeUp connects Roblox traders with trusted middlemen for secure limited, account, and item deals backed by clear trade proof standards.
           </p>
           <div className="hero-actions">
-            <a className="btn" href={serverData.inviteLink} target="_blank" rel="noreferrer">Request a Middleman</a>
+            <a className="btn" href="https://discord.gg/tradeup" target="_blank" rel="noreferrer">Request a Middleman</a>
             <a className="btn btn-outline" href="/server-id" onClick={(event) => handleNavClick(event, '/server-id')}>Verify Official Server</a>
           </div>
           <div className="stats">{statsText}</div>
@@ -701,7 +701,7 @@ function App() {
             />
             <div className="brand">Trade<span>Up</span></div>
           </div>
-          <a className="btn" href={serverData.inviteLink} target="_blank" rel="noreferrer">Join Server</a>
+          <a className="btn" href="https://discord.gg/tradeup" target="_blank" rel="noreferrer">Join Server</a>
         </div>
         <div className="container tabs">
           {tabs.map((tab) => (
