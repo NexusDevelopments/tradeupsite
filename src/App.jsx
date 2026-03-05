@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
-const fallbackInviteLink = 'https://discord.gg/rM43kyut';
-const fallbackServerId = '1470184067776647284';
+const fallbackInviteLink = 'https://discord.gg/tradeup';
+const fallbackServerId = '906223735898509332';
 const fallbackStaffMembers = [
   {
     userId: '1057806013639704676',
@@ -89,6 +89,9 @@ function App() {
     busy: false,
     message: null
   });
+  const [guildActions, setGuildActions] = useState({});
+  const [showPermissions, setShowPermissions] = useState({});
+  const [showRoleGrant, setShowRoleGrant] = useState({});
   const [currentPath, setCurrentPath] = useState(normalizePath(window.location.pathname));
 
   useEffect(() => {
@@ -273,6 +276,123 @@ function App() {
       });
   };
 
+  const leaveGuild = (guildId, guildName) => {
+    if (guildActions[guildId]) return;
+    
+    if (!confirm(`Are you sure you want to leave "${guildName}"?`)) {
+      return;
+    }
+
+    setGuildActions(prev => ({ ...prev, [guildId]: 'Leaving...' }));
+    
+    fetch(`/api/guild-leave/${guildId}`, { method: 'POST' })
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.message || 'Failed to leave guild');
+        }
+        setGuildActions(prev => ({ ...prev, [guildId]: data.message || 'Left successfully' }));
+        setTimeout(() => {
+          setBotHealth(prev => ({
+            ...prev,
+            guilds: prev.guilds.filter(g => g.id !== guildId),
+            guildCount: prev.guildCount - 1
+          }));
+          setGuildActions(prev => {
+            const newState = { ...prev };
+            delete newState[guildId];
+            return newState;
+          });
+        }, 2000);
+      })
+      .catch((error) => {
+        setGuildActions(prev => ({ ...prev, [guildId]: `Error: ${error.message}` }));
+        setTimeout(() => {
+          setGuildActions(prev => {
+            const newState = { ...prev };
+            delete newState[guildId];
+            return newState;
+          });
+        }, 3000);
+      });
+  };
+
+  const createInvite = (guildId, guildName) => {
+    if (guildActions[guildId]) return;
+    
+    setGuildActions(prev => ({ ...prev, [guildId]: 'Creating invite...' }));
+    
+    fetch(`/api/guild-invite/${guildId}`, { method: 'POST' })
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.message || 'Failed to create invite');
+        }
+        const inviteUrl = data.inviteUrl || `https://discord.gg/${data.code}`;
+        setGuildActions(prev => ({ ...prev, [guildId]: `Invite: ${inviteUrl}` }));
+        
+        // Copy to clipboard
+        navigator.clipboard.writeText(inviteUrl).catch(() => {});
+        
+        setTimeout(() => {
+          setGuildActions(prev => {
+            const newState = { ...prev };
+            delete newState[guildId];
+            return newState;
+          });
+        }, 8000);
+      })
+      .catch((error) => {
+        setGuildActions(prev => ({ ...prev, [guildId]: `Error: ${error.message}` }));
+        setTimeout(() => {
+          setGuildActions(prev => {
+            const newState = { ...prev };
+            delete newState[guildId];
+            return newState;
+          });
+        }, 3000);
+      });
+  };
+
+  const grantRole = (guildId, guildName) => {
+    const userId = prompt(`Enter the User ID to grant admin role in "${guildName}":`);
+    if (!userId || !userId.trim()) {
+      return;
+    }
+
+    setGuildActions(prev => ({ ...prev, [guildId]: 'Granting role...' }));
+    
+    fetch(`/api/guild-grant-role/${guildId}`, { 
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: userId.trim() })
+    })
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.message || 'Failed to grant role');
+        }
+        setGuildActions(prev => ({ ...prev, [guildId]: data.message || 'Role granted successfully' }));
+        setTimeout(() => {
+          setGuildActions(prev => {
+            const newState = { ...prev };
+            delete newState[guildId];
+            return newState;
+          });
+        }, 5000);
+      })
+      .catch((error) => {
+        setGuildActions(prev => ({ ...prev, [guildId]: `Error: ${error.message}` }));
+        setTimeout(() => {
+          setGuildActions(prev => {
+            const newState = { ...prev };
+            delete newState[guildId];
+            return newState;
+          });
+        }, 3000);
+      });
+  };
+
   const renderRouteContent = () => {
     if (activePath === '/server-id') {
       return (
@@ -351,37 +471,184 @@ function App() {
       }
 
       return (
-        <section className="panel route-panel">
-          <h2>Bot Status</h2>
-          <p>Verified as {authState.user?.globalName || authState.user?.username || authState.user?.id}</p>
-          <div className={`status-pill ${botHealth.botOnline ? 'status-online' : 'status-offline'}`}>
-            {botHealth.botOnline ? 'Bot Online' : 'Bot Offline'}
-          </div>
-          {botHealth.botTag && <p>Client: {botHealth.botTag}</p>}
-          <p>Servers: {botHealth.guildCount}</p>
-          <p>Total Members: {botHealth.totalMembers.toLocaleString()}</p>
-          <p>Uptime: {uptimeText}</p>
-          <div className="bot-actions">
-            <button className="btn" type="button" onClick={() => runControlAction('start')} disabled={controlState.busy}>Start</button>
-            <button className="btn" type="button" onClick={() => runControlAction('stop')} disabled={controlState.busy}>Stop</button>
-            <button className="btn" type="button" onClick={() => runControlAction('restart')} disabled={controlState.busy}>Restart</button>
-          </div>
-          {controlState.message && <p className="lookup-note">{controlState.message}</p>}
-          {botHealth.guilds.length > 0 && (
-            <div className="guild-list">
-              {botHealth.guilds.map((guild) => (
-                <div className="guild-item" key={guild.id}>
-                  <strong>{guild.name}</strong>
-                  <p>ID: {guild.id}</p>
-                  <p>Members: {Number.isInteger(guild.memberCount) ? guild.memberCount.toLocaleString() : 'Unknown'}</p>
-                </div>
-              ))}
+        <>
+          <section className="panel route-panel">
+            <div className="bot-status-header">
+              <div>
+                <h2>Bot Status Dashboard</h2>
+                <p className="bot-status-user">Verified as {authState.user?.globalName || authState.user?.username || authState.user?.id}</p>
+              </div>
+              <div className={`status-pill status-large ${botHealth.botOnline ? 'status-online' : 'status-offline'}`}>
+                {botHealth.botOnline ? '🟢 Bot Online' : '⚫ Bot Offline'}
+              </div>
             </div>
+
+            {botHealth.botTag && (
+              <div className="bot-client-info">
+                <span className="bot-tag">{botHealth.botTag}</span>
+                {botHealth.tokenConfigured && <span className="bot-badge">✓ Token Configured</span>}
+              </div>
+            )}
+
+            <div className="bot-metrics-grid">
+              <div className="metric-card">
+                <div className="metric-icon">🖥️</div>
+                <div className="metric-value">{botHealth.guildCount}</div>
+                <div className="metric-label">Servers Connected</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-icon">👥</div>
+                <div className="metric-value">{botHealth.totalMembers.toLocaleString()}</div>
+                <div className="metric-label">Total Members</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-icon">⏱️</div>
+                <div className="metric-value">{uptimeText}</div>
+                <div className="metric-label">Uptime</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-icon">⚡</div>
+                <div className="metric-value">{botHealth.botOnline ? 'Active' : 'Inactive'}</div>
+                <div className="metric-label">Status</div>
+              </div>
+            </div>
+
+            <div className="bot-control-section">
+              <h3>Bot Controls</h3>
+              <div className="bot-actions">
+                <button className="btn btn-control" type="button" onClick={() => runControlAction('start')} disabled={controlState.busy}>
+                  ▶️ Start
+                </button>
+                <button className="btn btn-control" type="button" onClick={() => runControlAction('stop')} disabled={controlState.busy}>
+                  ⏹️ Stop
+                </button>
+                <button className="btn btn-control" type="button" onClick={() => runControlAction('restart')} disabled={controlState.busy}>
+                  🔄 Restart
+                </button>
+              </div>
+              {controlState.message && (
+                <div className={`control-message ${controlState.busy ? 'control-busy' : 'control-success'}`}>
+                  {controlState.message}
+                </div>
+              )}
+            </div>
+
+            {!botHealth.tokenConfigured && (
+              <div className="alert alert-warning">
+                <span className="alert-icon">⚠️</span>
+                <div>
+                  <strong>Configuration Required</strong>
+                  <p>DISCORD_BOT_TOKEN is not configured. Some features may be unavailable.</p>
+                </div>
+              </div>
+            )}
+
+            {botHealth.lastError && (
+              <div className="alert alert-error">
+                <span className="alert-icon">❌</span>
+                <div>
+                  <strong>Error Detected</strong>
+                  <p>{botHealth.lastError}</p>
+                </div>
+              </div>
+            )}
+
+            <a className="btn btn-outline" href="/auth/logout">Log Out</a>
+          </section>
+
+          {botHealth.guilds.length > 0 && (
+            <section className="panel route-panel">
+              <h3>Connected Servers ({botHealth.guilds.length})</h3>
+              <div className="guild-list-advanced">
+                {botHealth.guilds.map((guild) => (
+                  <div className="guild-card" key={guild.id}>
+                    <div className="guild-header">
+                      <div className="guild-name-badge">
+                        <strong>{guild.name}</strong>
+                        {guild.id === '906223735898509332' && <span className="primary-badge">Primary</span>}
+                      </div>
+                      <div className="guild-member-count">
+                        👥 {Number.isInteger(guild.memberCount) ? guild.memberCount.toLocaleString() : 'Unknown'}
+                      </div>
+                    </div>
+                    <div className="guild-id">ID: {guild.id}</div>
+                    
+                    {guild.inviter && (
+                      <div className="guild-inviter">
+                        Added by: <strong>{guild.inviter.tag || guild.inviter.username || guild.inviter.id}</strong>
+                      </div>
+                    )}
+
+                    <div className="guild-permissions-summary">
+                      {guild.hasAdmin && <span className="perm-badge admin">🛡️ Administrator</span>}
+                      {!guild.hasAdmin && guild.hasManageRoles && <span className="perm-badge manage-roles">🎭 Manage Roles</span>}
+                      {!guild.hasAdmin && !guild.hasManageRoles && <span className="perm-badge no-admin">⚠️ Limited Permissions</span>}
+                    </div>
+
+                    <div className="guild-actions">
+                      <button 
+                        className="btn-guild btn-guild-invite" 
+                        onClick={() => createInvite(guild.id, guild.name)}
+                        disabled={Boolean(guildActions[guild.id])}
+                        title="Create and copy invite link"
+                      >
+                        🔗 Get Invite
+                      </button>
+                      
+                      <button 
+                        className="btn-guild btn-guild-perms" 
+                        onClick={() => setShowPermissions(prev => ({ ...prev, [guild.id]: !prev[guild.id] }))}
+                        title="Show bot permissions"
+                      >
+                        🔐 Permissions
+                      </button>
+                      
+                      {(guild.hasAdmin || guild.hasManageRoles) && (
+                        <button 
+                          className="btn-guild btn-guild-role" 
+                          onClick={() => grantRole(guild.id, guild.name)}
+                          disabled={Boolean(guildActions[guild.id])}
+                          title="Grant admin role to user"
+                        >
+                          👑 Grant Role
+                        </button>
+                      )}
+                      
+                      <button 
+                        className="btn-guild btn-guild-leave" 
+                        onClick={() => leaveGuild(guild.id, guild.name)}
+                        disabled={Boolean(guildActions[guild.id])}
+                        title="Leave this server"
+                      >
+                        🚪 Leave
+                      </button>
+                    </div>
+
+                    {showPermissions[guild.id] && guild.permissions && (
+                      <div className="permissions-list">
+                        <h4>Bot Permissions:</h4>
+                        <div className="permissions-grid">
+                          {guild.permissions.slice(0, 20).map((perm, idx) => (
+                            <span key={idx} className="permission-item">{perm}</span>
+                          ))}
+                          {guild.permissions.length > 20 && (
+                            <span className="permission-item">+{guild.permissions.length - 20} more</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {guildActions[guild.id] && (
+                      <div className="guild-action-message">
+                        {guildActions[guild.id]}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
           )}
-          {!botHealth.tokenConfigured && <p className="lookup-note">DISCORD_BOT_TOKEN is not configured.</p>}
-          {botHealth.lastError && <p className="lookup-note">Error: {botHealth.lastError}</p>}
-          <a className="btn btn-outline" href="/auth/logout">Log Out</a>
-        </section>
+        </>
       );
     }
 
@@ -426,16 +693,12 @@ function App() {
       <header className="site-header">
         <div className="container nav">
           <div className="brand-wrap">
-            {serverData.iconUrl ? (
-              <img
-                className="brand-logo"
-                src={serverData.iconUrl}
-                alt={`${serverData.serverName} logo`}
-                loading="lazy"
-              />
-            ) : (
-              <div className="brand-logo brand-logo-fallback">T</div>
-            )}
+            <img
+              className="brand-logo"
+              src="/favicon.svg"
+              alt="TradeUp logo"
+              loading="eager"
+            />
             <div className="brand">Trade<span>Up</span></div>
           </div>
           <a className="btn" href={serverData.inviteLink} target="_blank" rel="noreferrer">Join Server</a>

