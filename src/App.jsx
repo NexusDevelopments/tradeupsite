@@ -202,7 +202,7 @@ function App() {
   }, [currentPath]);
 
   useEffect(() => {
-    const iconHref = serverData.iconUrl || '/favicon.svg';
+    const iconHref = serverData.iconUrl || '/logo.png';
     let faviconLink = document.querySelector('link[rel="icon"]');
 
     if (!faviconLink) {
@@ -703,7 +703,7 @@ function App() {
           <div className="brand-wrap">
             <img
               className="brand-logo"
-              src="/favicon.svg"
+              src="/logo.png"
               alt="TradeUp logo"
               loading="eager"
             />
