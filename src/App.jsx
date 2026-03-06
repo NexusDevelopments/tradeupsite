@@ -448,7 +448,7 @@ function App() {
         <section className="panel route-panel">
           <h2>Join Our Discord Server</h2>
           <p>Use the official invite below to enter the TradeUp Roblox middleman server.</p>
-          <a className="btn" href={serverData.inviteLink} target="_blank" rel="noreferrer">Join Server</a>
+          <a className="btn" href="https://discord.gg/tradeup" target="_blank" rel="noreferrer">Join Server</a>
         </section>
       );
     }
