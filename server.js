@@ -213,18 +213,36 @@ async function getStaffMemberFromBot(guildId, userId) {
 
   try {
     const guild = await discordClient.guilds.fetch(guildId);
-    const member = await guild.members.fetch(userId);
-    const user = member?.user || await discordClient.users.fetch(userId);
-    const presence = await guild.presences.fetch(userId).catch(() => null);
-    const resolvedStatus = presence?.status || member?.presence?.status || null;
+    const member = await guild.members.fetch(userId).catch(() => null);
+    
+    if (!member) {
+      return null;
+    }
+
+    const user = member.user;
+    
+    // Try to get presence from cache first, then fetch if needed
+    let presence = guild.presences.cache.get(userId);
+    if (!presence) {
+      // Try to fetch the presence
+      try {
+        await guild.members.fetch({ user: userId, withPresences: true, force: true });
+        presence = guild.presences.cache.get(userId);
+      } catch {
+        // Presence fetch failed
+      }
+    }
+
+    const resolvedStatus = presence?.status || 'offline';
 
     return {
       username: user?.username || null,
       displayName: member?.displayName || user?.globalName || user?.username || null,
       avatarUrl: user?.displayAvatarURL({ extension: 'png', size: 256 }) || null,
-      status: resolvedStatus ? normalizeDiscordStatus(resolvedStatus) : null
+      status: normalizeDiscordStatus(resolvedStatus)
     };
-  } catch {
+  } catch (error) {
+    console.error(`Error fetching staff member ${userId}:`, error.message);
     return null;
   }
 }
@@ -260,12 +278,21 @@ async function startDiscordBotClient() {
       ]
     });
 
-    discordClient.on('ready', () => {
+    discordClient.on('ready', async () => {
       discordClientReady = true;
       botConnectedAt = Date.now();
       discordClientTag = discordClient.user?.tag || null;
       discordLastError = null;
       console.log(`Discord bot online as ${discordClient.user?.tag || 'unknown'}`);
+      
+      // Pre-fetch members with presences for the main guild
+      try {
+        const guild = await discordClient.guilds.fetch(serverId);
+        await guild.members.fetch({ withPresences: true, force: true });
+        console.log(`Cached members and presences for guild ${guild.name}`);
+      } catch (error) {
+        console.log(`Could not pre-fetch members: ${error.message}`);
+      }
     });
 
     discordClient.on('shardDisconnect', () => {
@@ -287,6 +314,15 @@ async function startDiscordBotClient() {
 
     discordClient.on('warn', (warning) => {
       console.warn('Discord client warning:', warning);
+    });
+
+    discordClient.on('presenceUpdate', (oldPresence, newPresence) => {
+      // Presence cache is automatically updated by discord.js
+      // This event just helps us log when staff member statuses change
+      const staffIds = staffMembers.map(m => m.userId);
+      if (staffIds.includes(newPresence.userId)) {
+        console.log(`Staff member ${newPresence.userId} status: ${newPresence.status}`);
+      }
     });
 
     await discordClient.login(discordBotToken);
