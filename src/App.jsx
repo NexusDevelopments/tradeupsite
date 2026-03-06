@@ -47,6 +47,14 @@ const statusEmoji = {
   unknown: '⚪'
 };
 
+const statusLabels = {
+  online: 'Online',
+  idle: 'Idle',
+  dnd: 'Do Not Disturb',
+  offline: 'Offline',
+  unknown: 'Unknown'
+};
+
 function normalizePath(pathname) {
   const path = pathname || '/';
   if (path === '/') {
@@ -433,7 +441,7 @@ function App() {
                   <p>{member.username ? `@${member.username}` : 'Username unavailable'}</p>
                   <p>{member.role} · ID: {member.userId}</p>
                   <div className={`status-pill status-${member.status || 'offline'}`}>
-                    Status: {member.status || 'offline'}
+                    {statusLabels[member.status] || statusLabels.offline}
                   </div>
                 </div>
               </div>
